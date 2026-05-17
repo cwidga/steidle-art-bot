@@ -86,8 +86,8 @@ def post_to_bluesky(image_bytes, caption, alt_text):
     if not handle or not password:
         raise EnvironmentError("Missing Bluesky credentials in environment variables.")
 
-    client = Client()
-    client.login(handle, password)
+client = Client(base_url="https://bsky.social")
+client.login(handle, password)
 
     upload = client.upload_blob(image_bytes)
 
