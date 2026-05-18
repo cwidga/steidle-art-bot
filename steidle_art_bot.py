@@ -3,8 +3,6 @@ Steidle Art Bot (GitHub Actions Version)
 Posts one random artwork from the Penn State EMS Museum Steidle Collection
 once per day to a Bluesky account.
 
-Designed to run via GitHub Actions (no local state file required).
-
 Requirements:
     requests
     beautifulsoup4
@@ -22,6 +20,7 @@ from bs4 import BeautifulSoup
 from atproto import Client
 
 BASE_URL = "https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item"
+BASE_DOMAIN = "https://exhibitions.psu.edu"
 
 
 def get_collection_items():
@@ -35,7 +34,7 @@ def get_collection_items():
         if "/item/" in a["href"]:
             full_url = a["href"]
             if not full_url.startswith("http"):
-                full_url = "https://exhibitions.psu.edu" + full_url
+                full_url = BASE_DOMAIN + full_url
             links.append(full_url)
 
     return list(set(links))
@@ -47,13 +46,35 @@ def scrape_item_page(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Image
-    img = soup.find("img")
     image_url = None
-    if img and img.get("src"):
-        image_url = img["src"]
-        if not image_url.startswith("http"):
-            image_url = "https://exhibitions.psu.edu" + image_url
+
+    # 1. Prefer image inside item content container
+    content_imgs = soup.select("div.item-img img")
+    for img in content_imgs:
+        src = img.get("src")
+        if src and "hero" not in src.lower():
+            image_url = src
+            break
+
+    # 2. Fallback: images inside main content area (avoid header/banner)
+    if not image_url:
+        main_content = soup.select_one("main")
+        if main_content:
+            imgs = main_content.find_all("img")
+            for img in imgs:
+                src = img.get("src")
+                if src and "hero" not in src.lower():
+                    image_url = src
+                    break
+
+    # 3. Final fallback: OpenGraph image if no better option
+    if not image_url:
+        og_img = soup.find("meta", property="og:image")
+        if og_img and og_img.get("content"):
+            image_url = og_img["content"]
+
+    if image_url and not image_url.startswith("http"):
+        image_url = BASE_DOMAIN + image_url
 
     # Title
     title_tag = soup.find("h1")
@@ -84,9 +105,9 @@ def post_to_bluesky(image_bytes, caption, alt_text):
     password = os.getenv("BLUESKY_APP_PASSWORD")
 
     if not handle or not password:
-        raise EnvironmentError("Missing Bluesky credentials in environment variables.")
+        raise EnvironmentError("Missing Bluesky credentials.")
 
-    client = Client(base_url="https://bsky.social")
+    client = Client()
     client.login(handle, password)
 
     upload = client.upload_blob(image_bytes)
@@ -115,7 +136,7 @@ def main():
     image_url, title, artist, date = scrape_item_page(item_url)
 
     if not image_url:
-        print("No image found for selected item.")
+        print("No primary image found for selected item.")
         return
 
     image_bytes = download_image(image_url)
