@@ -46,42 +46,42 @@ def scrape_item_page(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # PRIMARY ITEM IMAGE (exclude hero/banner)
+    # ------------------------
+    # PRIMARY ITEM IMAGE
+    # ------------------------
     image_url = None
 
-    main = soup.select_one("main")
-    if main:
-        for img in main.find_all("img"):
-            src = img.get("src")
-            if not src:
-                continue
-            lower = src.lower()
-            if "hero" in lower or "banner" in lower:
-                continue
-            if "/files/" in lower or "/media/" in lower:
-                image_url = src
-                break
+    # Omeka S primary media block
+    media_block = soup.select_one(".media-render img")
+
+    if not media_block:
+        # Fallback to resource thumbnail
+        media_block = soup.select_one(".resource-thumbnail img")
+
+    if media_block:
+        image_url = media_block.get("src")
 
     if image_url and not image_url.startswith("http"):
         image_url = BASE_DOMAIN + image_url
 
-    # METADATA EXTRACTION (structured fields)
+    # ------------------------
+    # METADATA
+    # ------------------------
     title = "Untitled"
     creator = "Creator unknown"
     date = "Date unknown"
     materials = "Materials not listed"
 
-    # Title
     title_tag = soup.select_one("h1")
     if title_tag:
         title = title_tag.get_text(strip=True)
 
-    # Metadata fields often stored in dt/dd pairs
     for dt in soup.find_all("dt"):
         label = dt.get_text(strip=True).lower()
         dd = dt.find_next_sibling("dd")
         if not dd:
             continue
+
         value = dd.get_text(" ", strip=True)
 
         if "creator" in label or "artist" in label:
@@ -92,7 +92,6 @@ def scrape_item_page(url):
             materials = value
 
     return image_url, title, creator, date, materials
-
 
 def download_image(image_url):
     response = requests.get(image_url)
