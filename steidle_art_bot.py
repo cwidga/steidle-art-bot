@@ -1,7 +1,7 @@
 """
 Steidle Art Bot (GitHub Actions Version)
 Posts one random artwork from the Penn State EMS Museum Steidle Collection
-once per day to a Bluesky account.
+once per day to a Bluesky account as a link preview with primary item image.
 
 Requirements:
     requests
@@ -31,7 +31,7 @@ def get_collection_items():
 
     links = []
     for a in soup.find_all("a", href=True):
-        if "/item/" in a["href"]:
+        if "/item/" in a["href"] and a["href"].count("/") > 2:
             full_url = a["href"]
             if not full_url.startswith("http"):
                 full_url = BASE_DOMAIN + full_url
@@ -46,52 +46,40 @@ def scrape_item_page(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
+    # Primary item image (exclude hero/banner images)
     image_url = None
-
-    # 1. Prefer image inside item content container
-    content_imgs = soup.select("div.item-img img")
-    for img in content_imgs:
-        src = img.get("src")
-        if src and "hero" not in src.lower():
-            image_url = src
-            break
-
-    # 2. Fallback: images inside main content area (avoid header/banner)
-    if not image_url:
-        main_content = soup.select_one("main")
-        if main_content:
-            imgs = main_content.find_all("img")
-            for img in imgs:
-                src = img.get("src")
-                if src and "hero" not in src.lower():
-                    image_url = src
-                    break
-
-    # 3. Final fallback: OpenGraph image if no better option
-    if not image_url:
-        og_img = soup.find("meta", property="og:image")
-        if og_img and og_img.get("content"):
-            image_url = og_img["content"]
+    main_content = soup.select_one("main")
+    if main_content:
+        for img in main_content.find_all("img"):
+            src = img.get("src")
+            if src and "hero" not in src.lower():
+                image_url = src
+                break
 
     if image_url and not image_url.startswith("http"):
         image_url = BASE_DOMAIN + image_url
 
-    # Title
+    # Extract metadata
     title_tag = soup.find("h1")
     title = title_tag.get_text(strip=True) if title_tag else "Untitled"
 
-    page_text = soup.get_text(separator="\n")
-    artist = "Unknown artist"
+    creator = "Unknown creator"
     date = "Date unknown"
+    materials = "Materials not listed"
 
-    for line in page_text.split("\n"):
+    metadata_text = soup.get_text(separator="\n")
+
+    for line in metadata_text.split("\n"):
         clean = line.strip()
-        if clean.lower().startswith("artist"):
-            artist = clean
-        if clean.lower().startswith("date"):
+        lower = clean.lower()
+        if lower.startswith("creator") or lower.startswith("artist"):
+            creator = clean
+        if lower.startswith("date"):
             date = clean
+        if lower.startswith("materials") or lower.startswith("medium"):
+            materials = clean
 
-    return image_url, title, artist, date
+    return image_url, title, creator, date, materials
 
 
 def download_image(image_url):
@@ -100,7 +88,7 @@ def download_image(image_url):
     return response.content
 
 
-def post_to_bluesky(image_bytes, caption, alt_text):
+def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
     handle = os.getenv("BLUESKY_HANDLE")
     password = os.getenv("BLUESKY_APP_PASSWORD")
 
@@ -112,16 +100,24 @@ def post_to_bluesky(image_bytes, caption, alt_text):
 
     upload = client.upload_blob(image_bytes)
 
+    post_text = (
+        f"{title}\n"
+        f"{creator}\n"
+        f"{date}\n"
+        f"{materials}\n\n"
+        f"{item_url}"
+    )
+
     client.send_post(
-        text=caption,
+        text=post_text,
         embed={
-            "$type": "app.bsky.embed.images",
-            "images": [
-                {
-                    "alt": alt_text,
-                    "image": upload.blob,
-                }
-            ],
+            "$type": "app.bsky.embed.external",
+            "external": {
+                "uri": item_url,
+                "title": title,
+                "description": f"{creator} | {date} | {materials}",
+                "thumb": upload.blob,
+            },
         },
     )
 
@@ -133,26 +129,15 @@ def main():
         return
 
     item_url = random.choice(items)
-    image_url, title, artist, date = scrape_item_page(item_url)
+    image_url, title, creator, date, materials = scrape_item_page(item_url)
 
     if not image_url:
-        print("No primary image found for selected item.")
+        print("No primary image found.")
         return
 
     image_bytes = download_image(image_url)
 
-    caption = (
-        f"{title}\n"
-        f"{artist}\n"
-        f"{date}\n\n"
-        f"From the Steidle Collection (Penn State EMS Museum)\n"
-        f"{item_url}\n\n"
-        f"#SteidleArtBot"
-    )
-
-    alt_text = f"{title} by {artist}. {date}. From the Steidle Collection at Penn State EMS Museum."
-
-    post_to_bluesky(image_bytes, caption, alt_text)
+    post_to_bluesky(item_url, image_bytes, title, creator, date, materials)
 
     print(f"Posted: {title}")
 
