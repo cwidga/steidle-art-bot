@@ -51,61 +51,56 @@ def get_collection_items():
 # Scrape individual item page
 # --------------------------------------------------
 def scrape_item_page(url):
-    response = requests.get(url)
+    # Extract numeric ID from URL
+    item_id = url.rstrip("/").split("/")[-1]
+
+    api_url = f"https://exhibitions.psu.edu/api/items/{item_id}"
+    response = requests.get(api_url)
     response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    data = response.json()
 
-    # ------------------------
-    # PRIMARY IMAGE
-    # ------------------------
-    image_url = None
+    title = data.get("o:title", "Untitled")
 
-    media = soup.select_one(".media-render img")
-    if not media:
-        media = soup.select_one(".resource-thumbnail img")
-    if not media:
-        media = soup.select_one(".media img")
-
-    if media:
-        image_url = media.get("src")
-
-    if image_url and not image_url.startswith("http"):
-        image_url = BASE_DOMAIN + image_url
-
-    # ------------------------
-    # METADATA
-    # ------------------------
-    title = "Untitled"
     creator = "Creator unknown"
     date = "Date unknown"
     materials = "Materials not listed"
+    image_url = None
 
-    # Title
-    title_tag = soup.find("h1")
-    if title_tag:
-        title = title_tag.get_text(strip=True)
+    # Metadata fields
+    for prop in data.get("o:properties", []):
+        term = prop.get("o:term", "").lower()
 
-    # Omeka S property blocks
-    for block in soup.select(".property, .item-property, .metadata-property"):
-        label_el = block.find(["h4", "dt", "div"], class_="property-label")
-        if not label_el:
+        values = data.get(term, [])
+        if not isinstance(values, list):
             continue
 
-        label = label_el.get_text(strip=True).lower()
+        text_values = [
+            v.get("@value") for v in values if "@value" in v
+        ]
 
-        value_container = block.select_one(".value, .property-values, dd")
-        if not value_container:
+        if not text_values:
             continue
 
-        value_text = value_container.get_text(" ", strip=True)
+        joined = " ".join(text_values)
 
-        if "creator" in label or "artist" in label:
-            creator = value_text
-        elif "date" in label:
-            date = value_text
-        elif "material" in label or "medium" in label:
-            materials = value_text
+        if "creator" in term:
+            creator = joined
+        elif "date" in term:
+            date = joined
+        elif "material" in term or "medium" in term:
+            materials = joined
+
+    # Media
+    media = data.get("o:media", [])
+    if media:
+        media_id = media[0].get("o:id")
+        media_api = f"https://exhibitions.psu.edu/api/media/{media_id}"
+        media_response = requests.get(media_api)
+        media_response.raise_for_status()
+        media_data = media_response.json()
+
+        image_url = media_data.get("o:original_url")
 
     return image_url, title, creator, date, materials
 
