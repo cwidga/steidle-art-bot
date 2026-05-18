@@ -12,6 +12,7 @@ Environment variables required:
     BLUESKY_HANDLE
     BLUESKY_APP_PASSWORD
 """
+print("Logged in as:", client.me.handle)
 
 import os
 import random
@@ -119,7 +120,20 @@ def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
             },
         },
     )
+response = client.send_post(
+    text=f"{title}\n{item_url}",
+    embed={
+        "$type": "app.bsky.embed.external",
+        "external": {
+            "uri": item_url,
+            "title": title or "Untitled",
+            "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
+        },
+    },
+)
 
+print("Posted to:", client.me.handle)
+print("Post URI:", response.uri)
 
 def main():
     items = get_collection_items()
