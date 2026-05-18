@@ -26,16 +26,35 @@ API_BASE = "https://exhibitions.psu.edu/api/items"
 # Get all numeric item URLs from collection landing
 # --------------------------------------------------
 def get_collection_items():
-    response = requests.get(BASE_COLLECTION_URL)
-    response.raise_for_status()
+    base_api = "https://exhibitions.psu.edu/api/items"
+    site_id = 12
 
-    links = set()
+    urls = []
+    page = 1
 
-    for match in re.findall(r"/item/(\d+)", response.text):
-        full_url = f"{BASE_COLLECTION_URL}/{match}"
-        links.add(full_url)
+    while True:
+        api_url = f"{base_api}?site_id={site_id}&page={page}"
 
-    return list(links)
+        response = requests.get(api_url)
+        response.raise_for_status()
+
+        items = response.json()
+
+        if not items:
+            break
+
+        for item in items:
+            item_id = item.get("o:id")
+            if item_id:
+                item_url = (
+                    f"https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item/{item_id}"
+                )
+                urls.append(item_url)
+
+        page += 1
+
+    print("Total items found:", len(urls))
+    return urls
 
 
 # --------------------------------------------------
