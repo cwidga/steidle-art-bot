@@ -23,21 +23,27 @@ BASE_URL = "https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item"
 BASE_DOMAIN = "https://exhibitions.psu.edu"
 
 
+import re
+
 def get_collection_items():
     response = requests.get(BASE_URL)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    links = []
+    links = set()
+
     for a in soup.find_all("a", href=True):
-        if "/item/" in a["href"] and a["href"].count("/") >= 4:
-            full_url = a["href"]
+        href = a["href"]
+
+        match = re.search(r"/item/(\d+)$", href)
+        if match:
+            full_url = href
             if not full_url.startswith("http"):
                 full_url = BASE_DOMAIN + full_url
-            links.append(full_url)
+            links.add(full_url)
 
-    return list(set(links))
+    return list(links)
 
 
 def scrape_item_page(url):
@@ -47,22 +53,22 @@ def scrape_item_page(url):
     soup = BeautifulSoup(response.text, "html.parser")
 
     # ------------------------
-    # PRIMARY ITEM IMAGE
+    # PRIMARY IMAGE (Omeka S)
     # ------------------------
     image_url = None
 
-    # Omeka S primary media block
-    media_block = soup.select_one(".media-render img")
+    media = soup.select_one(".media-render img")
+    if not media:
+        media = soup.select_one(".resource-thumbnail img")
 
-    if not media_block:
-        # Fallback to resource thumbnail
-        media_block = soup.select_one(".resource-thumbnail img")
-
-    if media_block:
-        image_url = media_block.get("src")
+    if media:
+        image_url = media.get("src")
 
     if image_url and not image_url.startswith("http"):
         image_url = BASE_DOMAIN + image_url
+
+    if not image_url:
+        return None, None, None, None, None
 
     # ------------------------
     # METADATA
@@ -129,15 +135,25 @@ def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
 
 def main():
     items = get_collection_items()
+
     if not items:
         print("No items found.")
         return
 
-    item_url = random.choice(items)
-    image_url, title, creator, date, materials = scrape_item_page(item_url)
+    random.shuffle(items)
 
-    if not image_url:
-        print("No primary image found.")
+    for item_url in items:
+        print("Trying:", item_url)
+
+        image_url, title, creator, date, materials = scrape_item_page(item_url)
+
+        if image_url:
+            image_bytes = download_image(image_url)
+            post_to_bluesky(image_bytes, title, creator, date, materials, item_url)
+            print("Posted:", title)
+            return
+
+    print("No valid items with images found.")
         return
 
     image_bytes = download_image(image_url)
