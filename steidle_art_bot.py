@@ -51,7 +51,6 @@ def get_collection_items():
 # Scrape individual item page
 # --------------------------------------------------
 def scrape_item_page(url):
-    # Extract numeric ID from URL
     item_id = url.rstrip("/").split("/")[-1]
 
     api_url = f"https://exhibitions.psu.edu/api/items/{item_id}"
@@ -60,47 +59,60 @@ def scrape_item_page(url):
 
     data = response.json()
 
+    # ------------------------
+    # TITLE
+    # ------------------------
     title = data.get("o:title", "Untitled")
 
+    # ------------------------
+    # CREATOR
+    # ------------------------
     creator = "Creator unknown"
+    if "dcterms:creator" in data:
+        creator_values = data["dcterms:creator"]
+        if isinstance(creator_values, list) and creator_values:
+            creator = creator_values[0].get("@value", creator)
+
+    # ------------------------
+    # DATE
+    # ------------------------
     date = "Date unknown"
+    if "dcterms:date" in data:
+        date_values = data["dcterms:date"]
+        if isinstance(date_values, list) and date_values:
+            date = date_values[0].get("@value", date)
+
+    # ------------------------
+    # MATERIALS (medium)
+    # ------------------------
     materials = "Materials not listed"
+    if "dcterms:medium" in data:
+        medium_values = data["dcterms:medium"]
+        if isinstance(medium_values, list) and medium_values:
+            materials = medium_values[0].get("@value", materials)
+
+    # ------------------------
+    # IMAGE
+    # ------------------------
     image_url = None
 
-    # Metadata fields
-    for prop in data.get("o:properties", []):
-        term = prop.get("o:term", "").lower()
+    media_list = data.get("o:media", [])
+    if media_list:
+        media_id = media_list[0].get("o:id")
 
-        values = data.get(term, [])
-        if not isinstance(values, list):
-            continue
+        if media_id:
+            media_api = f"https://exhibitions.psu.edu/api/media/{media_id}"
+            media_response = requests.get(media_api)
+            media_response.raise_for_status()
+            media_data = media_response.json()
 
-        text_values = [
-            v.get("@value") for v in values if "@value" in v
-        ]
+            # Try original file first
+            image_url = media_data.get("o:original_url")
 
-        if not text_values:
-            continue
-
-        joined = " ".join(text_values)
-
-        if "creator" in term:
-            creator = joined
-        elif "date" in term:
-            date = joined
-        elif "material" in term or "medium" in term:
-            materials = joined
-
-    # Media
-    media = data.get("o:media", [])
-    if media:
-        media_id = media[0].get("o:id")
-        media_api = f"https://exhibitions.psu.edu/api/media/{media_id}"
-        media_response = requests.get(media_api)
-        media_response.raise_for_status()
-        media_data = media_response.json()
-
-        image_url = media_data.get("o:original_url")
+            # Fallback to large thumbnail
+            if not image_url:
+                thumbs = media_data.get("o:thumbnail_urls", {})
+                image_url = thumbs.get("large") or thumbs.get("medium")
 
     return image_url, title, creator, date, materials
 
