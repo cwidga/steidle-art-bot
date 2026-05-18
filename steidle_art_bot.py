@@ -1,7 +1,7 @@
 """
-Steidle Art Bot (Final Clean Version)
+Steidle Art Bot
 Posts one random artwork from the Penn State EMS Museum Steidle Collection
-as a Bluesky external link preview using Omeka S API data.
+as a Bluesky image post with metadata and item link.
 
 Requirements:
     requests
@@ -14,41 +14,36 @@ Environment variables required:
 
 import os
 import random
-import re
 import requests
 from atproto import Client
 
-BASE_COLLECTION_URL = "https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item"
-API_BASE = "https://exhibitions.psu.edu/api/items"
+BASE_DOMAIN = "https://exhibitions.psu.edu"
+SITE_ID = 12
+SITE_SLUG = "EMSMuseum-Steidle-collection"
 
 
 # --------------------------------------------------
-# Get all numeric item URLs from collection landing
+# Get all item URLs (with pagination)
 # --------------------------------------------------
 def get_collection_items():
-    base_api = "https://exhibitions.psu.edu/api/items"
-    site_id = 12
+    base_api = f"{BASE_DOMAIN}/api/items"
 
     urls = []
     page = 1
 
     while True:
-        api_url = f"{base_api}?site_id={site_id}&page={page}"
-
+        api_url = f"{base_api}?site_id={SITE_ID}&page={page}"
         response = requests.get(api_url)
         response.raise_for_status()
 
         items = response.json()
-
         if not items:
             break
 
         for item in items:
             item_id = item.get("o:id")
             if item_id:
-                item_url = (
-                    f"https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item/{item_id}"
-                )
+                item_url = f"{BASE_DOMAIN}/s/{SITE_SLUG}/item/{item_id}"
                 urls.append(item_url)
 
         page += 1
@@ -58,14 +53,15 @@ def get_collection_items():
 
 
 # --------------------------------------------------
-# Fetch item metadata from Omeka S API
+# Get metadata + image from API
 # --------------------------------------------------
 def scrape_item_page(url):
     item_id = url.rstrip("/").split("/")[-1]
-    api_url = f"{API_BASE}/{item_id}"
+    api_url = f"{BASE_DOMAIN}/api/items/{item_id}"
 
     response = requests.get(api_url)
     response.raise_for_status()
+
     data = response.json()
 
     title = data.get("o:title", "Untitled")
@@ -87,38 +83,34 @@ def scrape_item_page(url):
         values = data["dcterms:medium"]
         if isinstance(values, list) and values:
             materials = values[0].get("@value", materials)
-# IMAGE
-image_url = None
 
-media_list = data.get("o:media", [])
+    # IMAGE
+    image_url = None
+    media_list = data.get("o:media", [])
 
-if media_list:
-    media_obj = media_list[0]
+    if media_list:
+        media_obj = media_list[0]
 
-    # Prefer original file
-    image_url = media_obj.get("o:original_url")
+        image_url = media_obj.get("o:original_url")
 
-    # Fallback to thumbnails
-    if not image_url:
-        thumbs = media_obj.get("o:thumbnail_urls", {})
-        image_url = (
-            thumbs.get("large")
-            or thumbs.get("medium")
-            or thumbs.get("square")
-        )
+        if not image_url:
+            thumbs = media_obj.get("o:thumbnail_urls", {})
+            image_url = (
+                thumbs.get("large")
+                or thumbs.get("medium")
+                or thumbs.get("square")
+            )
 
-# Fix relative URL
-if image_url and not image_url.startswith("http"):
-    image_url = "https://exhibitions.psu.edu" + image_url
+    if image_url and not image_url.startswith("http"):
+        image_url = BASE_DOMAIN + image_url
 
-print("Selected image URL:", image_url)
-    return title, creator, date, materials
+    return title, creator, date, materials, image_url
 
 
 # --------------------------------------------------
-# Post to Bluesky as external link preview
+# Post to Bluesky with image embed
 # --------------------------------------------------
-def post_to_bluesky(title, creator, date, materials, item_url):
+def post_to_bluesky(title, creator, date, materials, item_url, image_url):
     handle = os.getenv("BLUESKY_HANDLE")
     password = os.getenv("BLUESKY_APP_PASSWORD")
 
@@ -129,28 +121,41 @@ def post_to_bluesky(title, creator, date, materials, item_url):
     client.login(handle, password)
 
     print("Logged in as:", client.me.handle)
-image_response = requests.get(image_url, timeout=20)
-image_response.raise_for_status()
 
-content_type = image_response.headers.get("Content-Type", "")
-print("Image Content-Type:", content_type)
+    if not image_url:
+        print("No image URL found.")
+        return
 
-if "image" not in content_type:
-    print("Downloaded file is not an image.")
-    return
+    headers = {"User-Agent": "Mozilla/5.0"}
+    image_response = requests.get(image_url, headers=headers, timeout=20)
+    image_response.raise_for_status()
 
-image_bytes = image_response.content
-print("Image size:", len(image_bytes))
+    content_type = image_response.headers.get("Content-Type", "")
+    if "image" not in content_type:
+        print("Downloaded file is not an image.")
+        return
+
+    image_bytes = image_response.content
+    print("Image size:", len(image_bytes))
+
+    upload = client.upload_blob(image_bytes)
+
+    caption = (
+        f"{title}\n"
+        f"{creator} | {date} | {materials}\n\n"
+        f"{item_url}"
+    )
 
     response = client.send_post(
-        text=f"{title}\n{item_url}",
+        text=caption,
         embed={
-            "$type": "app.bsky.embed.external",
-            "external": {
-                "uri": item_url,
-                "title": title or "Untitled",
-                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
-            },
+            "$type": "app.bsky.embed.images",
+            "images": [
+                {
+                    "alt": f"{title} by {creator}, {date}. {materials}.",
+                    "image": upload.blob,
+                }
+            ],
         },
     )
 
@@ -158,7 +163,7 @@ print("Image size:", len(image_bytes))
 
 
 # --------------------------------------------------
-# Main execution
+# Main
 # --------------------------------------------------
 def main():
     items = get_collection_items()
@@ -172,16 +177,14 @@ def main():
     for item_url in items:
         print("Trying:", item_url)
 
-        try:
-            title, creator, date, materials = scrape_item_page(item_url)
-            post_to_bluesky(title, creator, date, materials, item_url)
+        title, creator, date, materials, image_url = scrape_item_page(item_url)
+
+        if image_url:
+            post_to_bluesky(title, creator, date, materials, item_url, image_url)
             print("Posted:", title)
             return
-        except Exception as e:
-            print("Skipping due to error:", e)
-            continue
 
-    print("No valid items found.")
+    print("No valid items with images found.")
 
 
 if __name__ == "__main__":
