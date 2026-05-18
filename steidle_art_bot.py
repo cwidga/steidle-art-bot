@@ -154,7 +154,7 @@ def main():
             return
 
     print("No valid items with images found.")
-        return
+    return
 
     image_bytes = download_image(image_url)
 
