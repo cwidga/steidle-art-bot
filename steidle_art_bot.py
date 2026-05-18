@@ -108,13 +108,14 @@ if media_list:
                 thumbs.get("large")
                 or thumbs.get("medium")
                 or thumbs.get("square")
-            )
-
-# Fix relative URL
+  # Fix relative URL
 if image_url and not image_url.startswith("http"):
     image_url = "https://exhibitions.psu.edu" + image_url
 
-    return title, creator, date, materials, image_url
+    return title, creator, date, materials, image_url          
+    )
+
+
 
 
 # --------------------------------------------------
