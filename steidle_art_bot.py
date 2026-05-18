@@ -109,14 +109,13 @@ def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
     )
 
     client.send_post(
-        text=post_text,
+        text=f"{title}\n{item_url}",
         embed={
             "$type": "app.bsky.embed.external",
             "external": {
                 "uri": item_url,
-                "title": title,
-                "description": f"{creator} | {date} | {materials}",
-                "thumb": upload.blob,
+                "title": title or "Untitled",
+                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
             },
         },
     )
