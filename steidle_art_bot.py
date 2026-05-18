@@ -74,34 +74,51 @@ def scrape_item_page(url):
         values = data["dcterms:medium"]
         if isinstance(values, list) and values:
             materials = values[0].get("@value", materials)
+media_list = data.get("o:media", [])
+image_url = None
 
-    return title, creator, date, materials
-
+if media_list:
+    media_obj = media_list[0]
+    thumbs = media_obj.get("o:thumbnail_urls", {})
+    image_url = (
+        thumbs.get("large")
+        or thumbs.get("medium")
+        or thumbs.get("square")
+    )    
+    return title, creator, date, materials, image_url
 
 # --------------------------------------------------
 # Post to Bluesky as external link preview
 # --------------------------------------------------
-def post_to_bluesky(title, creator, date, materials, item_url):
+def post_to_bluesky(title, creator, date, materials, item_url, image_url):
     handle = os.getenv("BLUESKY_HANDLE")
     password = os.getenv("BLUESKY_APP_PASSWORD")
-
-    if not handle or not password:
-        raise EnvironmentError("Missing Bluesky credentials.")
 
     client = Client(base_url="https://bsky.social")
     client.login(handle, password)
 
     print("Logged in as:", client.me.handle)
 
+    # Download image
+    image_response = requests.get(image_url)
+    image_response.raise_for_status()
+    image_bytes = image_response.content
+
+    # Upload to Bluesky
+    upload = client.upload_blob(image_bytes)
+
+    caption = f"{title}\n{creator} | {date} | {materials}\n\n{item_url}"
+
     response = client.send_post(
-        text=f"{title}\n{item_url}",
+        text=caption,
         embed={
-            "$type": "app.bsky.embed.external",
-            "external": {
-                "uri": item_url,
-                "title": title or "Untitled",
-                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
-            },
+            "$type": "app.bsky.embed.images",
+            "images": [
+                {
+                    "alt": f"{title} by {creator}, {date}. {materials}.",
+                    "image": upload.blob,
+                }
+            ],
         },
     )
 
@@ -129,7 +146,13 @@ def main():
             post_to_bluesky(title, creator, date, materials, item_url)
             print("Posted:", title)
             return
+title, creator, date, materials, image_url = scrape_item_page(item_url)
 
+if image_url:
+    post_to_bluesky(title, creator, date, materials, item_url, image_url)
+    print("Posted:", title)
+    return
+    
     print("No valid items found.")
 
 if __name__ == "__main__":
