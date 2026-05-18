@@ -26,21 +26,23 @@ API_BASE = "https://exhibitions.psu.edu/api/items"
 # Get all numeric item URLs from collection landing
 # --------------------------------------------------
 def get_collection_items():
-    # Discover all sites
-    sites_url = "https://exhibitions.psu.edu/api/sites?per_page=100"
+    api_url = "https://exhibitions.psu.edu/api/items?site_id=12&per_page=1000"
 
-    response = requests.get(sites_url)
+    response = requests.get(api_url)
     response.raise_for_status()
 
-    sites = response.json()
+    items = response.json()
 
-    for site in sites:
-        print("Site ID:", site.get("o:id"))
-        print("Site slug:", site.get("o:slug"))
-        print("------")
+    urls = []
 
-    return []
+    for item in items:
+        item_id = item.get("o:id")
+        if item_id:
+            item_url = f"https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/item/{item_id}"
+            urls.append(item_url)
 
+    print("Total items found:", len(urls))
+    return urls
 
 # --------------------------------------------------
 # Fetch item metadata from Omeka S API
@@ -120,6 +122,15 @@ def main():
 
     for item_url in items:
         print("Trying:", item_url)
+
+        image_url, title, creator, date, materials = scrape_item_page(item_url)
+
+        if title:
+            post_to_bluesky(title, creator, date, materials, item_url)
+            print("Posted:", title)
+            return
+
+    print("No valid items found.")
 
         try:
             title, creator, date, materials = scrape_item_page(item_url)
