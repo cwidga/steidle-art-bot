@@ -123,7 +123,7 @@ def main():
     for item_url in items:
         print("Trying:", item_url)
 
-        image_url, title, creator, date, materials = scrape_item_page(item_url)
+        title, creator, date, materials = scrape_item_page(item_url)
 
         if title:
             post_to_bluesky(title, creator, date, materials, item_url)
