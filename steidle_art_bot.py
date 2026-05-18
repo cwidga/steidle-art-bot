@@ -12,30 +12,7 @@ Environment variables required:
     BLUESKY_HANDLE
     BLUESKY_APP_PASSWORD
 """
-def post_to_bluesky(image_bytes, title, creator, date, materials, item_url):
-    handle = os.getenv("BLUESKY_HANDLE")
-    password = os.getenv("BLUESKY_APP_PASSWORD")
 
-    client = Client(base_url="https://bsky.social")
-    client.login(handle, password)
-
-    print("Logged in as:", client.me.handle)
-
-    upload = client.upload_blob(image_bytes)
-
-    response = client.send_post(
-        text=f"{title}\n{item_url}",
-        embed={
-            "$type": "app.bsky.embed.external",
-            "external": {
-                "uri": item_url,
-                "title": title or "Untitled",
-                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
-            },
-        },
-    )
-
-    print("Post URI:", response.uri)
 import os
 import random
 import requests
@@ -54,7 +31,7 @@ def get_collection_items():
 
     links = []
     for a in soup.find_all("a", href=True):
-        if "/item/" in a["href"] and a["href"].count("/") > 2:
+        if "/item/" in a["href"] and a["href"].count("/") >= 4:
             full_url = a["href"]
             if not full_url.startswith("http"):
                 full_url = BASE_DOMAIN + full_url
@@ -69,38 +46,50 @@ def scrape_item_page(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Primary item image (exclude hero/banner images)
+    # PRIMARY ITEM IMAGE (exclude hero/banner)
     image_url = None
-    main_content = soup.select_one("main")
-    if main_content:
-        for img in main_content.find_all("img"):
+
+    main = soup.select_one("main")
+    if main:
+        for img in main.find_all("img"):
             src = img.get("src")
-            if src and "hero" not in src.lower():
+            if not src:
+                continue
+            lower = src.lower()
+            if "hero" in lower or "banner" in lower:
+                continue
+            if "/files/" in lower or "/media/" in lower:
                 image_url = src
                 break
 
     if image_url and not image_url.startswith("http"):
         image_url = BASE_DOMAIN + image_url
 
-    # Extract metadata
-    title_tag = soup.find("h1")
-    title = title_tag.get_text(strip=True) if title_tag else "Untitled"
-
-    creator = "Unknown creator"
+    # METADATA EXTRACTION (structured fields)
+    title = "Untitled"
+    creator = "Creator unknown"
     date = "Date unknown"
     materials = "Materials not listed"
 
-    metadata_text = soup.get_text(separator="\n")
+    # Title
+    title_tag = soup.select_one("h1")
+    if title_tag:
+        title = title_tag.get_text(strip=True)
 
-    for line in metadata_text.split("\n"):
-        clean = line.strip()
-        lower = clean.lower()
-        if lower.startswith("creator") or lower.startswith("artist"):
-            creator = clean
-        if lower.startswith("date"):
-            date = clean
-        if lower.startswith("materials") or lower.startswith("medium"):
-            materials = clean
+    # Metadata fields often stored in dt/dd pairs
+    for dt in soup.find_all("dt"):
+        label = dt.get_text(strip=True).lower()
+        dd = dt.find_next_sibling("dd")
+        if not dd:
+            continue
+        value = dd.get_text(" ", strip=True)
+
+        if "creator" in label or "artist" in label:
+            creator = value
+        elif "date" in label:
+            date = value
+        elif "material" in label or "medium" in label:
+            materials = value
 
     return image_url, title, creator, date, materials
 
@@ -118,18 +107,12 @@ def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
     if not handle or not password:
         raise EnvironmentError("Missing Bluesky credentials.")
 
-    client = Client()
+    client = Client(base_url="https://bsky.social")
     client.login(handle, password)
 
     upload = client.upload_blob(image_bytes)
 
-    post_text = (
-        f"{title}\n"
-        f"{creator}\n"
-        f"{date}\n"
-        f"{materials}\n\n"
-        f"{item_url}"
-    )
+    description = f"{creator} | {date} | {materials}"
 
     client.send_post(
         text=f"{title}\n{item_url}",
@@ -137,25 +120,13 @@ def post_to_bluesky(item_url, image_bytes, title, creator, date, materials):
             "$type": "app.bsky.embed.external",
             "external": {
                 "uri": item_url,
-                "title": title or "Untitled",
-                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
+                "title": title,
+                "description": description,
+                "thumb": upload.blob,
             },
         },
     )
-response = client.send_post(
-    text=f"{title}\n{item_url}",
-    embed={
-        "$type": "app.bsky.embed.external",
-        "external": {
-            "uri": item_url,
-            "title": title or "Untitled",
-            "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
-        },
-    },
-)
 
-print("Posted to:", client.me.handle)
-print("Post URI:", response.uri)
 
 def main():
     items = get_collection_items()
