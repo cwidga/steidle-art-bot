@@ -132,17 +132,5 @@ def main():
 
     print("No valid items found.")
 
-        try:
-            title, creator, date, materials = scrape_item_page(item_url)
-            post_to_bluesky(title, creator, date, materials, item_url)
-            print("Posted:", title)
-            return
-        except Exception as e:
-            print("Skipping due to error:", e)
-            continue
-
-    print("No valid items found.")
-
-
 if __name__ == "__main__":
     main()
