@@ -100,8 +100,8 @@ def post_to_bluesky(image_bytes, caption, alt_text):
     if not session_string:
         raise EnvironmentError("Missing BLUESKY_SESSION secret.")
 
-    client = Client()
-    client.login(session_string=session_string)
+    client = Client(base_url="https://bsky.social")
+    client.login(handle, password)
 
     upload = client.upload_blob(image_bytes)
 
