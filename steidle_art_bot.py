@@ -56,7 +56,9 @@ def scrape_item_page(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Primary media image (Omeka S structure)
+    # ------------------------
+    # PRIMARY IMAGE
+    # ------------------------
     image_url = None
 
     media = soup.select_one(".media-render img")
@@ -69,33 +71,38 @@ def scrape_item_page(url):
     if image_url and not image_url.startswith("http"):
         image_url = BASE_DOMAIN + image_url
 
-    if not image_url:
-        return None, None, None, None, None
-
-    # Metadata
+    # ------------------------
+    # METADATA (Omeka S structure)
+    # ------------------------
     title = "Untitled"
     creator = "Creator unknown"
     date = "Date unknown"
     materials = "Materials not listed"
 
+    # Title
     title_tag = soup.select_one("h1")
     if title_tag:
         title = title_tag.get_text(strip=True)
 
-    for dt in soup.find_all("dt"):
-        label = dt.get_text(strip=True).lower()
-        dd = dt.find_next_sibling("dd")
-        if not dd:
+    # Omeka property blocks
+    properties = soup.select(".property")
+
+    for prop in properties:
+        label = prop.select_one(".property-label")
+        values = prop.select_one(".property-values")
+
+        if not label or not values:
             continue
 
-        value = dd.get_text(" ", strip=True)
+        label_text = label.get_text(strip=True).lower()
+        value_text = values.get_text(" ", strip=True)
 
-        if "creator" in label or "artist" in label:
-            creator = value
-        elif "date" in label:
-            date = value
-        elif "material" in label or "medium" in label:
-            materials = value
+        if "creator" in label_text or "artist" in label_text:
+            creator = value_text
+        elif "date" in label_text:
+            date = value_text
+        elif "material" in label_text or "medium" in label_text:
+            materials = value_text
 
     return image_url, title, creator, date, materials
 
