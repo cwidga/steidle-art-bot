@@ -64,6 +64,8 @@ def scrape_item_page(url):
     media = soup.select_one(".media-render img")
     if not media:
         media = soup.select_one(".resource-thumbnail img")
+    if not media:
+        media = soup.select_one(".media img")
 
     if media:
         image_url = media.get("src")
@@ -72,7 +74,7 @@ def scrape_item_page(url):
         image_url = BASE_DOMAIN + image_url
 
     # ------------------------
-    # METADATA (Omeka S structure)
+    # METADATA
     # ------------------------
     title = "Untitled"
     creator = "Creator unknown"
@@ -80,28 +82,29 @@ def scrape_item_page(url):
     materials = "Materials not listed"
 
     # Title
-    title_tag = soup.select_one("h1")
+    title_tag = soup.find("h1")
     if title_tag:
         title = title_tag.get_text(strip=True)
 
-    # Omeka property blocks
-    properties = soup.select(".property")
-
-    for prop in properties:
-        label = prop.select_one(".property-label")
-        values = prop.select_one(".property-values")
-
-        if not label or not values:
+    # Omeka S property blocks
+    for block in soup.select(".property, .item-property, .metadata-property"):
+        label_el = block.find(["h4", "dt", "div"], class_="property-label")
+        if not label_el:
             continue
 
-        label_text = label.get_text(strip=True).lower()
-        value_text = values.get_text(" ", strip=True)
+        label = label_el.get_text(strip=True).lower()
 
-        if "creator" in label_text or "artist" in label_text:
+        value_container = block.select_one(".value, .property-values, dd")
+        if not value_container:
+            continue
+
+        value_text = value_container.get_text(" ", strip=True)
+
+        if "creator" in label or "artist" in label:
             creator = value_text
-        elif "date" in label_text:
+        elif "date" in label:
             date = value_text
-        elif "material" in label_text or "medium" in label_text:
+        elif "material" in label or "medium" in label:
             materials = value_text
 
     return image_url, title, creator, date, materials
