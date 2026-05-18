@@ -26,7 +26,7 @@ API_BASE = "https://exhibitions.psu.edu/api/items"
 # Get all numeric item URLs from collection landing
 # --------------------------------------------------
 def get_collection_items():
-    api_url = "https://exhibitions.psu.edu/s/EMSMuseum-Steidle-collection/api/items?per_page=1000"
+    api_url = "https://exhibitions.psu.edu/api/items?site_id=3&per_page=1000"
 
     response = requests.get(api_url)
     response.raise_for_status()
