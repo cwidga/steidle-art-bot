@@ -12,8 +12,30 @@ Environment variables required:
     BLUESKY_HANDLE
     BLUESKY_APP_PASSWORD
 """
-print("Logged in as:", client.me.handle)
+def post_to_bluesky(image_bytes, title, creator, date, materials, item_url):
+    handle = os.getenv("BLUESKY_HANDLE")
+    password = os.getenv("BLUESKY_APP_PASSWORD")
 
+    client = Client(base_url="https://bsky.social")
+    client.login(handle, password)
+
+    print("Logged in as:", client.me.handle)
+
+    upload = client.upload_blob(image_bytes)
+
+    response = client.send_post(
+        text=f"{title}\n{item_url}",
+        embed={
+            "$type": "app.bsky.embed.external",
+            "external": {
+                "uri": item_url,
+                "title": title or "Untitled",
+                "description": f"{creator or 'Creator unknown'} | {date or 'Date unknown'} | {materials or 'Materials not listed'}",
+            },
+        },
+    )
+
+    print("Post URI:", response.uri)
 import os
 import random
 import requests
