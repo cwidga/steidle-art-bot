@@ -87,7 +87,31 @@ def scrape_item_page(url):
         values = data["dcterms:medium"]
         if isinstance(values, list) and values:
             materials = values[0].get("@value", materials)
+# IMAGE
+image_url = None
 
+media_list = data.get("o:media", [])
+
+if media_list:
+    media_obj = media_list[0]
+
+    # Prefer original file
+    image_url = media_obj.get("o:original_url")
+
+    # Fallback to thumbnails
+    if not image_url:
+        thumbs = media_obj.get("o:thumbnail_urls", {})
+        image_url = (
+            thumbs.get("large")
+            or thumbs.get("medium")
+            or thumbs.get("square")
+        )
+
+# Fix relative URL
+if image_url and not image_url.startswith("http"):
+    image_url = "https://exhibitions.psu.edu" + image_url
+
+print("Selected image URL:", image_url)
     return title, creator, date, materials
 
 
@@ -105,6 +129,18 @@ def post_to_bluesky(title, creator, date, materials, item_url):
     client.login(handle, password)
 
     print("Logged in as:", client.me.handle)
+image_response = requests.get(image_url, timeout=20)
+image_response.raise_for_status()
+
+content_type = image_response.headers.get("Content-Type", "")
+print("Image Content-Type:", content_type)
+
+if "image" not in content_type:
+    print("Downloaded file is not an image.")
+    return
+
+image_bytes = image_response.content
+print("Image size:", len(image_bytes))
 
     response = client.send_post(
         text=f"{title}\n{item_url}",
