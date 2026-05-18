@@ -92,27 +92,20 @@ def scrape_item_page(url):
             materials = medium_values[0].get("@value", materials)
 
     # ------------------------
-    # IMAGE
+    # IMAGE (from item API)
     # ------------------------
     image_url = None
 
     media_list = data.get("o:media", [])
     if media_list:
-        media_id = media_list[0].get("o:id")
+        media_obj = media_list[0]
 
-        if media_id:
-            media_api = f"https://exhibitions.psu.edu/api/media/{media_id}"
-            media_response = requests.get(media_api)
-            media_response.raise_for_status()
-            media_data = media_response.json()
-
-            # Try original file first
-            image_url = media_data.get("o:original_url")
-
-            # Fallback to large thumbnail
-            if not image_url:
-                thumbs = media_data.get("o:thumbnail_urls", {})
-                image_url = thumbs.get("large") or thumbs.get("medium")
+        thumbs = media_obj.get("o:thumbnail_urls", {})
+        image_url = (
+            thumbs.get("large")
+            or thumbs.get("medium")
+            or thumbs.get("square")
+        )
 
     return image_url, title, creator, date, materials
 
