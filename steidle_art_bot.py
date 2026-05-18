@@ -23,11 +23,10 @@ SITE_SLUG = "EMSMuseum-Steidle-collection"
 
 
 # --------------------------------------------------
-# Get all item URLs (with pagination)
+# Get all collection item URLs (with pagination)
 # --------------------------------------------------
 def get_collection_items():
     base_api = f"{BASE_DOMAIN}/api/items"
-
     urls = []
     page = 1
 
@@ -53,7 +52,7 @@ def get_collection_items():
 
 
 # --------------------------------------------------
-# Get metadata + image from API
+# Get metadata + image via Omeka API
 # --------------------------------------------------
 def scrape_item_page(url):
     item_id = url.rstrip("/").split("/")[-1]
@@ -84,38 +83,33 @@ def scrape_item_page(url):
         if isinstance(values, list) and values:
             materials = values[0].get("@value", materials)
 
-   # IMAGE
-image_url = None
+    # IMAGE retrieval via media endpoint
+    image_url = None
+    media_list = data.get("o:media", [])
 
-media_list = data.get("o:media", [])
+    if media_list:
+        media_id = media_list[0].get("o:id")
 
-if media_list:
-    media_id = media_list[0].get("o:id")
+        if media_id:
+            media_api = f"{BASE_DOMAIN}/api/media/{media_id}"
+            media_response = requests.get(media_api)
+            media_response.raise_for_status()
+            media_data = media_response.json()
 
-    if media_id:
-        media_api = f"https://exhibitions.psu.edu/api/media/{media_id}"
-        media_response = requests.get(media_api)
-        media_response.raise_for_status()
-        media_data = media_response.json()
+            image_url = media_data.get("o:original_url")
 
-        # Try original file first
-        image_url = media_data.get("o:original_url")
+            if not image_url:
+                thumbs = media_data.get("o:thumbnail_urls", {})
+                image_url = (
+                    thumbs.get("large")
+                    or thumbs.get("medium")
+                    or thumbs.get("square")
+                )
 
-        # Fallback to thumbnail
-        if not image_url:
-            thumbs = media_data.get("o:thumbnail_urls", {})
-            image_url = (
-                thumbs.get("large")
-                or thumbs.get("medium")
-                or thumbs.get("square")
-  # Fix relative URL
-if image_url and not image_url.startswith("http"):
-    image_url = "https://exhibitions.psu.edu" + image_url
+    if image_url and not image_url.startswith("http"):
+        image_url = BASE_DOMAIN + image_url
 
-    return title, creator, date, materials, image_url          
-    )
-
-
+    return title, creator, date, materials, image_url
 
 
 # --------------------------------------------------
@@ -128,14 +122,14 @@ def post_to_bluesky(title, creator, date, materials, item_url, image_url):
     if not handle or not password:
         raise EnvironmentError("Missing Bluesky credentials.")
 
+    if not image_url:
+        print("No image URL found.")
+        return
+
     client = Client(base_url="https://bsky.social")
     client.login(handle, password)
 
     print("Logged in as:", client.me.handle)
-
-    if not image_url:
-        print("No image URL found.")
-        return
 
     headers = {"User-Agent": "Mozilla/5.0"}
     image_response = requests.get(image_url, headers=headers, timeout=20)
