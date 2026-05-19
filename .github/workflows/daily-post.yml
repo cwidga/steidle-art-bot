@@ -2,7 +2,7 @@ name: Daily Steidle Art Post
 
 on:
   schedule:
-    - cron: '0 14 * * *'   # Runs daily at 14:00 UTC
+    - cron: '47 16 * * *'   # Runs daily at 14:00 UTC
   workflow_dispatch:
 
 jobs:
