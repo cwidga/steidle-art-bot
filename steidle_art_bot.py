@@ -149,7 +149,7 @@ def post_to_bluesky(title, creator, date, materials, item_url, image_url):
         f"{title}\n"
         f"{creator} | {date} | {materials}\n\n"
         f"{item_url}"
-        "#bsmuseums #artbot #PennState"
+        f"#bsmuseums #artbot #PennState"
     )
 
     response = client.send_post(
