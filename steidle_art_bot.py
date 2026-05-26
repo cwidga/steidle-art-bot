@@ -136,23 +136,42 @@ def post_to_bluesky(title, creator, date, materials, item_url, image_url):
         f"{title}\n"
         f"{creator} | {date} | {materials}\n\n"
         f"{item_url}\n\n"
-        "#bsmuseums"
+        "#bsmuseums #artbot #pennstate"
     )
+facets = []
 
-    facets = []
+# URL facet
+start = caption.find(item_url)
+end = start + len(item_url)
 
-    # URL facet
-    start = caption.find(item_url)
-    end = start + len(item_url)
+facets.append(
+    models.AppBskyRichtextFacet.Main(
+        index=models.AppBskyRichtextFacet.ByteSlice(
+            byteStart=start,
+            byteEnd=end,
+        ),
+        features=[
+            models.AppBskyRichtextFacet.Link(uri=item_url)
+        ],
+    )
+)
+
+# Hashtags
+hashtags = ["bsmuseums", "artbot", "pennstate"]
+
+for tag in hashtags:
+    hashtag_text = f"#{tag}"
+    tag_start = caption.find(hashtag_text)
+    tag_end = tag_start + len(hashtag_text)
 
     facets.append(
         models.AppBskyRichtextFacet.Main(
             index=models.AppBskyRichtextFacet.ByteSlice(
-                byteStart=start,
-                byteEnd=end,
+                byteStart=tag_start,
+                byteEnd=tag_end,
             ),
             features=[
-                models.AppBskyRichtextFacet.Link(uri=item_url)
+                models.AppBskyRichtextFacet.Tag(tag=tag)
             ],
         )
     )
