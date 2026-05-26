@@ -115,45 +115,68 @@ def scrape_item_page(url):
 # --------------------------------------------------
 # Post to Bluesky with image embed
 # --------------------------------------------------
+from atproto import models
+
 def post_to_bluesky(title, creator, date, materials, item_url, image_url):
     handle = os.getenv("BLUESKY_HANDLE")
     password = os.getenv("BLUESKY_APP_PASSWORD")
 
-    if not handle or not password:
-        raise EnvironmentError("Missing Bluesky credentials.")
-
-    if not image_url:
-        print("No image URL found.")
-        return
-
     client = Client(base_url="https://bsky.social")
     client.login(handle, password)
 
-    print("Logged in as:", client.me.handle)
-
+    # Download image
     headers = {"User-Agent": "Mozilla/5.0"}
     image_response = requests.get(image_url, headers=headers, timeout=20)
     image_response.raise_for_status()
-
-    content_type = image_response.headers.get("Content-Type", "")
-    if "image" not in content_type:
-        print("Downloaded file is not an image.")
-        return
-
     image_bytes = image_response.content
-    print("Image size:", len(image_bytes))
 
     upload = client.upload_blob(image_bytes)
 
     caption = (
         f"{title}\n"
         f"{creator} | {date} | {materials}\n\n"
-        f"{item_url}"
-        ".     #bsmuseums #artbot #PennState"
+        f"{item_url}\n\n"
+        "#bsmuseums"
+    )
+
+    facets = []
+
+    # URL facet
+    start = caption.find(item_url)
+    end = start + len(item_url)
+
+    facets.append(
+        models.AppBskyRichtextFacet.Main(
+            index=models.AppBskyRichtextFacet.ByteSlice(
+                byteStart=start,
+                byteEnd=end,
+            ),
+            features=[
+                models.AppBskyRichtextFacet.Link(uri=item_url)
+            ],
+        )
+    )
+
+    # Hashtag facet
+    hashtag = "#bsmuseums"
+    tag_start = caption.find(hashtag)
+    tag_end = tag_start + len(hashtag)
+
+    facets.append(
+        models.AppBskyRichtextFacet.Main(
+            index=models.AppBskyRichtextFacet.ByteSlice(
+                byteStart=tag_start,
+                byteEnd=tag_end,
+            ),
+            features=[
+                models.AppBskyRichtextFacet.Tag(tag="bsmuseums")
+            ],
+        )
     )
 
     response = client.send_post(
         text=caption,
+        facets=facets,
         embed={
             "$type": "app.bsky.embed.images",
             "images": [
